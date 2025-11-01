@@ -3,6 +3,9 @@ from typing import List
 import os
 from pathlib import Path
 
+# Get the backend directory (where .env should be)
+BACKEND_DIR = Path(__file__).parent.parent.parent
+
 class Settings(BaseSettings):
     # API Configuration
     api_v1_prefix: str = "/api/v1"
@@ -22,12 +25,12 @@ class Settings(BaseSettings):
         "http://localhost:8000",
     ]
     
-    # Calendly
+    # Calendly - THIS IS CRITICAL
     calendly_api_key: str = ""
     calendly_base_url: str = "https://api.calendly.com"
     
     # Data
-    data_dir: Path = Path("./calendly_dump")
+    data_dir: Path = BACKEND_DIR / "calendly_dump"
     
     # Redis (for caching)
     redis_url: str = "redis://localhost:6379"
@@ -36,8 +39,30 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./calendly_analytics.db"
     
     class Config:
-        env_file = ".env"
+        # Look for .env in the backend directory
+        env_file = str(BACKEND_DIR / ".env")
         case_sensitive = False
+        extra = "allow"
+
+_settings = None
 
 def get_settings() -> Settings:
-    return Settings()
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+        
+        # Print configuration for debugging
+        print("\n" + "="*70)
+        print("Configuration Loaded:")
+        print("="*70)
+        print(f"Backend Directory: {BACKEND_DIR}")
+        print(f"Data Directory: {_settings.data_dir}")
+        print(f"Calendly API Key Set: {'Yes' if _settings.calendly_api_key else 'No'}")
+        if _settings.calendly_api_key:
+            print(f"Calendly API Key (first 10 chars): {_settings.calendly_api_key[:10]}...")
+        print("="*70 + "\n")
+        
+        # Ensure data directory exists
+        _settings.data_dir.mkdir(parents=True, exist_ok=True)
+        
+    return _settings

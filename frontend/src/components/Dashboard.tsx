@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from 'react-query'
 import axios from 'axios'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -10,7 +10,7 @@ import {
 import {
   Calendar, Users, TrendingUp, Target, RefreshCw, AlertCircle,
   CheckCircle, Clock, BarChart3, Filter, Zap, Star,
-  ArrowUp, ArrowDown, Activity
+  ArrowUp, ArrowDown, Activity, Download, Loader
 } from 'lucide-react'
 
 // Types
@@ -43,38 +43,113 @@ interface AnalyticsData {
   }
 }
 
+interface DownloadStatus {
+  is_downloading: boolean
+  progress: number
+  message: string
+  error: string | null
+  step_name: string
+  details: string
+  current_step: number
+  total_steps: number
+}
+
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D']
 
 const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('overview')
+  const [showDownloadStatus, setShowDownloadStatus] = useState(false)
   const queryClient = useQueryClient()
 
-  const { data: analyticsData, isLoading, error } = useQuery<AnalyticsData>(
+  const { data: analyticsData, isLoading, error, refetch } = useQuery<AnalyticsData>(
     'analytics',
     () => axios.get('/api/v1/analytics/cleverly-introduction').then(res => res.data),
-    { refetchInterval: 300000 }
+    { 
+      refetchInterval: false,
+      retry: 1,
+      refetchOnWindowFocus: false
+    }
   )
 
-  const refreshMutation = useMutation(
-    () => axios.post('/api/v1/analytics/refresh-data'),
+  // Poll for download status
+  const { data: downloadStatus } = useQuery<DownloadStatus>(
+    'downloadStatus',
+    () => axios.get('/api/v1/analytics/download-status').then(res => res.data),
+    {
+      refetchInterval: showDownloadStatus ? 2000 : false,
+      enabled: showDownloadStatus
+    }
+  )
+
+  const downloadMutation = useMutation(
+    () => axios.post('/api/v1/analytics/download-data'),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries('analytics')
+        setShowDownloadStatus(true)
       }
     }
   )
 
-  if (error) {
+  // Auto-hide download status when complete
+  useEffect(() => {
+    if (downloadStatus && !downloadStatus.is_downloading && downloadStatus.progress === 100) {
+      setTimeout(() => {
+        setShowDownloadStatus(false)
+        refetch() // Refresh analytics after download completes
+      }, 3000)
+    }
+  }, [downloadStatus, refetch])
+
+  const handleDownload = () => {
+    downloadMutation.mutate()
+  }
+
+  // Show download screen if no data and not currently loading analytics
+  const showDownloadScreen = error && !isLoading && !downloadStatus?.is_downloading
+
+  if (showDownloadScreen) {
     return (
       <motion.div 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="min-h-screen flex items-center justify-center"
+        className="min-h-screen flex items-center justify-center p-4"
       >
-        <div className="text-center glass-card p-8 max-w-md">
-          <AlertCircle className="mx-auto h-16 w-16 text-red-400 mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-2">Failed to load analytics</h2>
-          <p className="text-white/70">{(error as Error).message}</p>
+        <div className="text-center glass-card p-12 max-w-2xl">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 200, damping: 20 }}
+          >
+            <Download className="mx-auto h-20 w-20 text-blue-400 mb-6" />
+          </motion.div>
+          <h2 className="text-3xl font-bold text-white mb-4">Welcome to Calendly Analytics</h2>
+          <p className="text-white/70 text-lg mb-8">
+            No data found. Click the button below to download your Calendly data and start analyzing.
+          </p>
+          <motion.button
+            onClick={handleDownload}
+            disabled={downloadMutation.isLoading}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            className="btn-primary text-xl py-4 px-8 flex items-center gap-3 mx-auto"
+          >
+            {downloadMutation.isLoading ? (
+              <>
+                <Loader className="h-6 w-6 animate-spin" />
+                Starting Download...
+              </>
+            ) : (
+              <>
+                <Download className="h-6 w-6" />
+                Download Calendly Data
+              </>
+            )}
+          </motion.button>
+          {downloadMutation.isError && (
+            <p className="text-red-400 mt-4">
+              Error: {(downloadMutation.error as Error)?.message}
+            </p>
+          )}
         </div>
       </motion.div>
     )
@@ -82,6 +157,55 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Download Status Banner */}
+      <AnimatePresence>
+        {showDownloadStatus && downloadStatus && (
+          <motion.div
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md"
+          >
+            <div className="glass-card p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  {downloadStatus.is_downloading ? (
+                    <Loader className="h-5 w-5 text-blue-400 animate-spin" />
+                  ) : downloadStatus.error ? (
+                    <AlertCircle className="h-5 w-5 text-red-400" />
+                  ) : (
+                    <CheckCircle className="h-5 w-5 text-green-400" />
+                  )}
+                  <span className="text-white font-medium">
+                    {downloadStatus.is_downloading ? 'Downloading...' : 
+                     downloadStatus.error ? 'Download Failed' : 'Download Complete'}
+                  </span>
+                </div>
+                <button
+                  onClick={() => setShowDownloadStatus(false)}
+                  className="text-white/60 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="text-white/70 text-sm mb-2">{downloadStatus.message}</p>
+              {downloadStatus.is_downloading && (
+                <div className="w-full bg-white/20 rounded-full h-2">
+                  <motion.div
+                    className="bg-blue-500 h-2 rounded-full"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${downloadStatus.progress}%` }}
+                  />
+                </div>
+              )}
+              {downloadStatus.error && (
+                <p className="text-red-400 text-sm mt-2">{downloadStatus.error}</p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <motion.div 
         initial={{ y: -50, opacity: 0 }}
@@ -102,12 +226,29 @@ const Dashboard: React.FC = () => {
           className="flex gap-4 mt-4 lg:mt-0"
         >
           <button
-            onClick={() => refreshMutation.mutate()}
-            disabled={refreshMutation.isLoading}
+            onClick={handleDownload}
+            disabled={downloadMutation.isLoading || downloadStatus?.is_downloading}
+            className="btn-primary flex items-center gap-2"
+          >
+            {downloadMutation.isLoading || downloadStatus?.is_downloading ? (
+              <>
+                <Loader className="h-4 w-4 animate-spin" />
+                Downloading...
+              </>
+            ) : (
+              <>
+                <Download className="h-4 w-4" />
+                Download Data
+              </>
+            )}
+          </button>
+          <button
+            onClick={() => refetch()}
+            disabled={isLoading}
             className="btn-secondary flex items-center gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${refreshMutation.isLoading ? 'animate-spin' : ''}`} />
-            Refresh Data
+            <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
           </button>
         </motion.div>
       </motion.div>
@@ -158,7 +299,7 @@ const Dashboard: React.FC = () => {
         transition={{ delay: 0.3 }}
         className="glass-card p-2 mb-8"
       >
-        <nav className="flex space-x-2">
+        <nav className="flex space-x-2 overflow-x-auto">
           {[
             { id: 'overview', label: 'Overview', icon: <BarChart3 className="h-4 w-4" /> },
             { id: 'internal-notes', label: 'Internal Notes', icon: <Filter className="h-4 w-4" /> },
@@ -169,7 +310,7 @@ const Dashboard: React.FC = () => {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 py-3 px-6 rounded-lg font-medium transition-all duration-300 ${
+              className={`flex items-center gap-2 py-3 px-6 rounded-lg font-medium transition-all duration-300 whitespace-nowrap ${
                 activeTab === tab.id
                   ? 'bg-white/20 text-white shadow-lg'
                   : 'text-white/70 hover:text-white hover:bg-white/10'
