@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     ]
     
     # Calendly
-    calendly_api_key: str
+    calendly_api_key: str = ""
     calendly_base_url: str = "https://api.calendly.com"
     
     # Data
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     
     class Config:
         env_file = ".env"
-        case_sensitive = True
+        case_sensitive = False
 
 def get_settings() -> Settings:
     return Settings()

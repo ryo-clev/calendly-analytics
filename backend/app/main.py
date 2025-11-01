@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
@@ -48,14 +48,19 @@ def create_application() -> FastAPI:
     # Include API routes
     app.include_router(api_router, prefix="/api/v1")
     
-    # Serve frontend in production
-    frontend_path = Path(__file__).parent.parent.parent / "frontend" / "dist"
-    if frontend_path.exists():
-        app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
-        
-        @app.get("/")
-        async def serve_frontend():
-            return FileResponse(frontend_path / "index.html")
+    # Root endpoint
+    @app.get("/")
+    async def root():
+        return {
+            "message": "Calendly Analytics API",
+            "version": "1.0.0",
+            "status": "running",
+            "endpoints": {
+                "health": "/health",
+                "api_docs": "/api/docs",
+                "frontend": "http://localhost:3000 (in development mode)"
+            }
+        }
     
     return app
 
@@ -65,7 +70,7 @@ app = create_application()
 async def health_check():
     return {
         "status": "healthy",
-        "timestamp": "2024-01-01T00:00:00Z",  # You might want to use datetime.utcnow().isoformat()
+        "message": "Calendly Analytics API is running",
         "version": "1.0.0"
     }
 

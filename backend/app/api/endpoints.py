@@ -26,10 +26,15 @@ async def refresh_data(background_tasks: BackgroundTasks):
     calendly_service = CalendlyService()
     
     async def refresh_task():
-        await calendly_service.refresh_data()
+        result = await calendly_service.refresh_data()
+        print(f"Data refresh completed: {result}")
     
     background_tasks.add_task(refresh_task)
-    return {"message": "Data refresh started in background"}
+    return {
+        "message": "Data refresh started in background",
+        "status": "processing",
+        "note": "Check the data preview endpoint to see when data is available"
+    }
 
 @router.get("/analytics/cleverly-introduction", response_model=AnalyticsResponse)
 async def get_cleverly_analytics():
@@ -57,10 +62,11 @@ async def get_raw_data():
     df = analytics_service.data_processor.create_analytics_dataframe()
     
     if df.empty:
-        return {"error": "No data available"}
+        return {"error": "No data available", "message": "Please refresh data first"}
     
     return {
         "columns": df.columns.tolist(),
         "shape": df.shape,
-        "sample": df.head(10).to_dict('records')
+        "sample": df.head(10).to_dict('records'),
+        "total_records": len(df)
     }
